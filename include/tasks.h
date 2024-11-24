@@ -7,6 +7,11 @@ typedef enum {
 	MakeDest,
 	ReadSource,
 
-} Tasks;
+} TaskType;
+
+struct {
+	TaskType type;
+	int fd;
+} Task;
 
 #endif // TASKS_H
