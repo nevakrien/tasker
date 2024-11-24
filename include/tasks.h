@@ -9,7 +9,7 @@ typedef enum {
 
 } TaskType;
 
-struct {
+typedef struct {
 	TaskType type;
 	int fd;
 } Task;
