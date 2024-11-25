@@ -2,7 +2,7 @@
 #include <threads.h>
 #include <stdlib.h>
 
-int copy_file(struct CopyTask* task) {
+int copy_file(CopyTask* task) {
     char buffer[BUFSIZ]; // Temporary buffer for copying
     size_t bytes_read, bytes_written;
 
@@ -54,7 +54,7 @@ exit_err:
 }
 
 static int copy_file_worker(void* data){
-	struct CopyTask* task = (struct CopyTask*)data;
+	CopyTask* task = (CopyTask*)data;
 	int ans = copy_file(task);
 	if(ans == 1) {
 		*task->global_err = true;
@@ -64,13 +64,13 @@ static int copy_file_worker(void* data){
 
 // Parallel copy function
 int parallel_copy_file(const char **in, const char **out, size_t num_files) {
-    struct CopyTask *tasks = malloc(sizeof(struct CopyTask) * num_files);
+    CopyTask *tasks = malloc(sizeof(CopyTask) * num_files);
     thrd_t *threads = malloc(sizeof(thrd_t) * num_files);
     volatile bool global_err = false;
 
     // Initialize tasks
     for (size_t i = 0; i < num_files; i++) {
-        tasks[i] = (struct CopyTask) {
+        tasks[i] = (CopyTask) {
         	in[i],
         	out[i],
         	&global_err
