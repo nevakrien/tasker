@@ -14,4 +14,9 @@ typedef struct
 int copy_file(CopyTask *task);
 int parallel_copy_file(const char **in, const char **out, size_t num_files);
 
+inline void print_copy_task(CopyTask *task)
+{
+	printf("CopyTask\n In Path: %s\n Out Path: %s\n", task->in_path, task->out_path);
+}
+
 #endif // FILE_OPS_H
