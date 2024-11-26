@@ -2,19 +2,17 @@
 CC = cc
 
 # Compiler flags (you can adjust as needed)
-CFLAGS = -Wall -Wextra -O2 --std=c11 -Iinclude
+CFLAGS = -Wall -Wextra -O2 --std=gnu99 -Iinclude
 
-all: hello_world bin/file_ops.o
+all: hello_world 
 
 # Build object files
 hello_world: src/hello_world.c
 	$(CC) $(CFLAGS) -o bin/hello_world src/hello_world.c
 
-bin/file_ops.o: src/file_ops.c
-	$(CC) $(CFLAGS) -c -o bin/file_ops.o src/file_ops.c
 
-run: hello_world
-	./hello_world
+run: src/maker.c
+	 $(CC) $(CFLAGS) src/maker.c && ./a.out && ./bin/hello_world
 
 # Clean up the build files
 clean:
