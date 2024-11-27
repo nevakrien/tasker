@@ -25,6 +25,13 @@ int main()  {
 	SYSTEM2_RESULT result=System2RunSubprocess("gcc",args,sizeof(args),&info);
 	abord_on_fail(result);
 
+	int return_code;
+	result = System2GetCommandReturnValueSync(&info,&return_code,true);
+	if(return_code){
+		printf("got return code %d\n",return_code);
+	}
+	abord_on_fail(result);
+
 	uint32_t bytes_read = 0;
 	char buffer[BUFSIZ] = {0};
 	do {
@@ -37,12 +44,8 @@ int main()  {
 
 	abord_on_fail(result);
 
-	int return_code;
-	result = System2GetCommandReturnValueSync(&info,&return_code);
-	if(return_code){
-		printf("got return code %d\n",return_code);
-	}
-	abord_on_fail(result);
+	
+	abord_on_fail(System2CleanupCommand(&info));
 
 	printf("yay\n");
 	return 0;

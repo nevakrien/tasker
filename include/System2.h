@@ -1,6 +1,8 @@
 #ifndef SYSTEM2_H
 #define SYSTEM2_H
 
+//this is an expermental header from https://github.com/Neko-Box-Coder/System2/blob/e671b49bd1c58c0f681f68ed1706fbb32ed021a0/System2.h
+
 //============================================================
 //Declaration
 //============================================================
@@ -37,6 +39,7 @@ If you do not want to use header only due to system header leakage
     #endif
 #endif
 
+//TODO: MSVC dllimport dllexport
 #if SYSTEM2_DECLARATION_ONLY || SYSTEM2_IMPLEMENTATION_ONLY
     //We don't need any inline prefix if we are having declaration and implementation separated
     #define SYSTEM2_FUNC_PREFIX
@@ -88,7 +91,10 @@ typedef enum
     SYSTEM2_RESULT_COMMAND_WAIT_SYNC_FAILED = -6,
     SYSTEM2_RESULT_COMMAND_WAIT_ASYNC_FAILED = -7,
     SYSTEM2_RESULT_UNSUPPORTED_PLATFORM = -8,
-    SYSTEM2_RESULT_COMMAND_CONSTRUCT_FAILED = -9
+    SYSTEM2_RESULT_COMMAND_CONSTRUCT_FAILED = -9,
+    SYSTEM2_RESULT_POSIX_SPAWN_FILE_ACTION_DESTROY_FAILED = -10,
+    SYSTEM2_RESULT_POSIX_SPAWN_FILE_ACTION_DUP2_FAILED = -11,
+    SYSTEM2_RESULT_POSIX_SPAWN_RUN_DIRECTORY_NOT_SUPPORTED = -12
 } SYSTEM2_RESULT;
 
 /*
@@ -105,6 +111,9 @@ Could return the follow result:
 - SYSTEM2_RESULT_CREATE_CHILD_PROCESS_FAILED
 - SYSTEM2_RESULT_PIPE_FD_CLOSE_FAILED
 - SYSTEM2_RESULT_COMMAND_CONSTRUCT_FAILED
+- SYSTEM2_RESULT_POSIX_SPAWN_FILE_ACTION_DESTROY_FAILED
+- SYSTEM2_RESULT_POSIX_SPAWN_FILE_ACTION_DUP2_FAILED
+- SYSTEM2_RESULT_POSIX_SPAWN_RUN_DIRECTORY_NOT_SUPPORTED
 */
 SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2Run(  const char* command, 
                                                 System2CommandInfo* inOutCommandInfo);
@@ -121,6 +130,9 @@ Could return the follow result:
 - SYSTEM2_RESULT_CREATE_CHILD_PROCESS_FAILED
 - SYSTEM2_RESULT_PIPE_FD_CLOSE_FAILED
 - SYSTEM2_RESULT_COMMAND_CONSTRUCT_FAILED
+- SYSTEM2_RESULT_POSIX_SPAWN_FILE_ACTION_DESTROY_FAILED
+- SYSTEM2_RESULT_POSIX_SPAWN_FILE_ACTION_DUP2_FAILED
+- SYSTEM2_RESULT_POSIX_SPAWN_RUN_DIRECTORY_NOT_SUPPORTED
 */
 SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2RunSubprocess(const char* executable,
                                                         const char* const* args,
@@ -163,8 +175,22 @@ SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2WriteToInput( const System2CommandInfo
 //SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2CloseInput(System2CommandInfo* info);
 
 /*
+Cleanup any open handles associated with the command.
+
+Could return the follow result:
+- SYSTEM2_RESULT_SUCCESS
+- SYSTEM2_RESULT_PIPE_FD_CLOSE_FAILED
+*/
+SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2CleanupCommand(const System2CommandInfo* info);
+
+/*
 Gets the return code if the command has finished.
 Otherwise, this will return SYSTEM2_RESULT_COMMAND_NOT_FINISHED immediately.
+
+If `manualCleanup` is false, 
+`System2CleanupCommand()` is automatically called when the command has exited.
+
+Otherwise, `System2CleanupCommand()` should be called when the command has exited.
 
 Could return the follow result:
 - SYSTEM2_RESULT_SUCCESS
@@ -175,10 +201,16 @@ Could return the follow result:
 */
 SYSTEM2_FUNC_PREFIX 
 SYSTEM2_RESULT System2GetCommandReturnValueAsync(   const System2CommandInfo* info, 
-                                                    int* outReturnCode);
+                                                    int* outReturnCode,
+                                                    bool manualCleanup);
 
 /*
 Wait for the command to finish and gets the return code
+
+If `manualCleanup` is false, 
+`System2CleanupCommand()` is automatically called when the command has exited.
+
+Otherwise, `System2CleanupCommand()` should be called when the command has exited.
 
 Could return the follow result:
 - SYSTEM2_RESULT_SUCCESS
@@ -187,7 +219,8 @@ Could return the follow result:
 - SYSTEM2_RESULT_COMMAND_WAIT_SYNC_FAILED
 */
 SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2GetCommandReturnValueSync(const System2CommandInfo* info, 
-                                                                    int* outReturnCode);
+                                                                    int* outReturnCode,
+                                                                    bool manualCleanup);
 
 
 //============================================================
@@ -201,6 +234,13 @@ SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2GetCommandReturnValueSync(const System
 
 #if defined(__unix__) || defined(__APPLE__)
     #include <sys/wait.h>
+    
+    //This bypasses inheriting memory from parent process (glibc 2.24) but removes the rundir feature
+    //#define SYSTEM2_POSIX_SPAWN 1
+    #if defined(SYSTEM2_POSIX_SPAWN) && SYSTEM2_POSIX_SPAWN != 0
+        #include <spawn.h>
+        extern char **environ;
+    #endif
 
     SYSTEM2_FUNC_PREFIX 
     SYSTEM2_RESULT System2RunSubprocessPosix(   const char* executable,
@@ -224,56 +264,147 @@ SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2GetCommandReturnValueSync(const System
             nullTerminatedArgs[i] = args[i];
         
         nullTerminatedArgs[argsCount] = NULL;
-        pid_t pid = fork();
         
-        if(pid < 0)
-        {
-            free(nullTerminatedArgs);
-            return SYSTEM2_RESULT_CREATE_CHILD_PROCESS_FAILED;
-        }
-        //Child
-        else if(pid == 0)
-        {
-            if(close(inOutCommandInfo->ParentToChildPipes[SYSTEM2_FD_WRITE]) != 0)
-                _exit(2);
-            
-            if(close(inOutCommandInfo->ChildToParentPipes[SYSTEM2_FD_READ]) != 0)
-                _exit(3);
-            
-            if(inOutCommandInfo->RunDirectory != NULL)
+        #if !defined(SYSTEM2_POSIX_SPAWN) || SYSTEM2_POSIX_SPAWN == 0
+            pid_t pid = fork();
+        
+            if(pid < 0)
             {
-                if(chdir(inOutCommandInfo->RunDirectory) != 0)
-                    _exit(4);
+                free(nullTerminatedArgs);
+                return SYSTEM2_RESULT_CREATE_CHILD_PROCESS_FAILED;
             }
-            
-            if(inOutCommandInfo->RedirectInput)
+            //Child
+            else if(pid == 0)
             {
-                result = dup2(inOutCommandInfo->ParentToChildPipes[SYSTEM2_FD_READ], STDIN_FILENO);
-                if(result == -1)
-                    _exit(5);
+                if(close(inOutCommandInfo->ParentToChildPipes[SYSTEM2_FD_WRITE]) != 0)
+                    _exit(2);
+                
+                if(close(inOutCommandInfo->ChildToParentPipes[SYSTEM2_FD_READ]) != 0)
+                    _exit(3);
+                
+                if(inOutCommandInfo->RunDirectory != NULL)
+                {
+                    if(chdir(inOutCommandInfo->RunDirectory) != 0)
+                        _exit(4);
+                }
+                
+                if(inOutCommandInfo->RedirectInput)
+                {
+                    result = dup2(  inOutCommandInfo->ParentToChildPipes[SYSTEM2_FD_READ], 
+                                    STDIN_FILENO);
+                    if(result == -1)
+                        _exit(5);
+                }
+
+                if(inOutCommandInfo->RedirectOutput)
+                {
+                    result = dup2(  inOutCommandInfo->ChildToParentPipes[SYSTEM2_FD_WRITE], 
+                                    STDOUT_FILENO);
+                    if(result == -1)
+                        _exit(6);
+                    
+                    result = dup2(  inOutCommandInfo->ChildToParentPipes[SYSTEM2_FD_WRITE], 
+                                    STDERR_FILENO);
+                    if(result == -1)
+                        _exit(7);
+                }
+                
+                //TODO: Send the errno back to the host and display the error
+                if(execvp(executable, (char**)nullTerminatedArgs) == -1)
+                    _exit(52);
+                
+                //Should never be reached
+                
+                _exit(8);
+            }
+        #else //SYSTEM2_POSIX_SPAWN
+            posix_spawn_file_actions_t file_actions;
+            posix_spawn_file_actions_init(&file_actions);
+
+            //Close unused pipe ends in the child process
+            int* parentToChildPipes = inOutCommandInfo->ParentToChildPipes;
+            if(posix_spawn_file_actions_addclose(   &file_actions, 
+                                                    parentToChildPipes[SYSTEM2_FD_WRITE]) != 0) 
+            {
+                posix_spawn_file_actions_destroy(&file_actions);
+                free(nullTerminatedArgs);
+                return SYSTEM2_RESULT_POSIX_SPAWN_FILE_ACTION_DESTROY_FAILED;
             }
 
-            if(inOutCommandInfo->RedirectOutput)
+            int* childToParentPipes = inOutCommandInfo->ChildToParentPipes;
+            if(posix_spawn_file_actions_addclose(   &file_actions, 
+                                                    childToParentPipes[SYSTEM2_FD_READ]) != 0) 
             {
-                result = dup2(inOutCommandInfo->ChildToParentPipes[SYSTEM2_FD_WRITE], STDOUT_FILENO);
-                if(result == -1)
-                    _exit(6);
-                
-                result = dup2(inOutCommandInfo->ChildToParentPipes[SYSTEM2_FD_WRITE], STDERR_FILENO);
-                if(result == -1)
-                    _exit(7);
+                posix_spawn_file_actions_destroy(&file_actions);
+                free(nullTerminatedArgs);
+                return SYSTEM2_RESULT_POSIX_SPAWN_FILE_ACTION_DESTROY_FAILED;
             }
+
+            //Redirect input
+            if(inOutCommandInfo->RedirectInput)
+            {
+                if(posix_spawn_file_actions_adddup2(&file_actions,
+                                                    parentToChildPipes[SYSTEM2_FD_READ],
+                                                    STDIN_FILENO) != 0) 
+                {
+                    posix_spawn_file_actions_destroy(&file_actions);
+                    free(nullTerminatedArgs);
+                    return SYSTEM2_RESULT_POSIX_SPAWN_FILE_ACTION_DUP2_FAILED;
+                }
+            }
+
+            //Redirect output
+            if(inOutCommandInfo->RedirectOutput)
+            { 
+                if(posix_spawn_file_actions_adddup2(&file_actions,
+                                                    childToParentPipes[SYSTEM2_FD_WRITE],
+                                                    STDOUT_FILENO) != 0)
+                {
+                    posix_spawn_file_actions_destroy(&file_actions);
+                    free(nullTerminatedArgs);
+                    return SYSTEM2_RESULT_POSIX_SPAWN_FILE_ACTION_DUP2_FAILED;
+                }
+
+                if(posix_spawn_file_actions_adddup2(&file_actions,
+                                                    childToParentPipes[SYSTEM2_FD_WRITE],
+                                                    STDERR_FILENO) != 0)
+                {
+                    posix_spawn_file_actions_destroy(&file_actions);
+                    free(nullTerminatedArgs);
+                    return SYSTEM2_RESULT_POSIX_SPAWN_FILE_ACTION_DUP2_FAILED;
+                }
+            }
+
+            //Close the duplicated file descriptors
+            posix_spawn_file_actions_addclose(&file_actions, parentToChildPipes[SYSTEM2_FD_READ]);
+            posix_spawn_file_actions_addclose(&file_actions, childToParentPipes[SYSTEM2_FD_WRITE]);
+
+            //Handle changing the directory
+            if(inOutCommandInfo->RunDirectory)
+            {
+                free(nullTerminatedArgs);
+                return SYSTEM2_RESULT_POSIX_SPAWN_RUN_DIRECTORY_NOT_SUPPORTED;
+            }
+
+            pid_t pid;
+            int spawn_status = posix_spawnp(&pid, 
+                                            executable, 
+                                            &file_actions, 
+                                            NULL, 
+                                            (char **)nullTerminatedArgs, 
+                                            environ);
             
-            //TODO: Send the errno back to the host and display the error
-            if(execvp(executable, (char**)nullTerminatedArgs) == -1)
-                _exit(52);
-            
-            //Should never be reached
-            
-            _exit(8);
-        }
-        //Parent
-        else
+            posix_spawn_file_actions_destroy(&file_actions);
+
+            if(spawn_status != 0)
+            {
+                fprintf(stderr, "posix_spawn failed: %s\n", strerror(spawn_status));
+                free(nullTerminatedArgs);
+                return SYSTEM2_RESULT_CREATE_CHILD_PROCESS_FAILED;
+            }
+        #endif //SYSTEM2_POSIX_SPAWN
+        
+        //Parent code
         {
             free(nullTerminatedArgs);
             
@@ -285,7 +416,6 @@ SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2GetCommandReturnValueSync(const System
             
             inOutCommandInfo->ChildProcessID = pid;
         }
-        
         return SYSTEM2_RESULT_SUCCESS;
     }
 
@@ -352,9 +482,21 @@ SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2GetCommandReturnValueSync(const System
         return SYSTEM2_RESULT_SUCCESS;
     }
     
+    SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2CleanupCommandPosix(const System2CommandInfo* info)
+    {
+        if(close(info->ChildToParentPipes[SYSTEM2_FD_READ]) != 0)
+            return SYSTEM2_RESULT_PIPE_FD_CLOSE_FAILED;
+
+        if(close(info->ParentToChildPipes[SYSTEM2_FD_WRITE]) != 0)
+            return SYSTEM2_RESULT_PIPE_FD_CLOSE_FAILED;
+        
+        return SYSTEM2_RESULT_SUCCESS;
+    }
+    
     SYSTEM2_FUNC_PREFIX 
     SYSTEM2_RESULT System2GetCommandReturnValueAsyncPosix(  const System2CommandInfo* info, 
-                                                            int* outReturnCode)
+                                                            int* outReturnCode,
+                                                            bool manualCleanup)
     {
         int status;
         pid_t pidResult = waitpid(info->ChildProcessID, &status, WNOHANG);
@@ -364,11 +506,8 @@ SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2GetCommandReturnValueSync(const System
         else if(pidResult == -1)
             return SYSTEM2_RESULT_COMMAND_WAIT_ASYNC_FAILED;
 
-        if(close(info->ChildToParentPipes[SYSTEM2_FD_READ]) != 0)
-            return SYSTEM2_RESULT_PIPE_FD_CLOSE_FAILED;
-
-        if(close(info->ParentToChildPipes[SYSTEM2_FD_WRITE]) != 0)
-            return SYSTEM2_RESULT_PIPE_FD_CLOSE_FAILED;
+        if(!manualCleanup)
+            System2CleanupCommandPosix(info);
         
         if(!WIFEXITED(status))
         {
@@ -382,7 +521,8 @@ SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2GetCommandReturnValueSync(const System
     
     SYSTEM2_FUNC_PREFIX 
     SYSTEM2_RESULT System2GetCommandReturnValueSyncPosix(   const System2CommandInfo* info, 
-                                                            int* outReturnCode)
+                                                            int* outReturnCode,
+                                                            bool manualCleanup)
     {
         int status;
         pid_t pidResult = waitpid(info->ChildProcessID, &status, 0);
@@ -390,11 +530,8 @@ SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2GetCommandReturnValueSync(const System
         if(pidResult == -1)
             return SYSTEM2_RESULT_COMMAND_WAIT_SYNC_FAILED;
         
-        if(close(info->ChildToParentPipes[SYSTEM2_FD_READ]) != 0)
-            return SYSTEM2_RESULT_PIPE_FD_CLOSE_FAILED;
-
-        if(close(info->ParentToChildPipes[SYSTEM2_FD_WRITE]) != 0)
-            return SYSTEM2_RESULT_PIPE_FD_CLOSE_FAILED;
+        if(!manualCleanup)
+            System2CleanupCommandPosix(info);
         
         if(!WIFEXITED(status))
         {
@@ -928,14 +1065,8 @@ SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2GetCommandReturnValueSync(const System
         return SYSTEM2_RESULT_SUCCESS;
     }
     
-    SYSTEM2_FUNC_PREFIX 
-    SYSTEM2_RESULT System2GetCommandReturnValueAsyncWindows(const System2CommandInfo* info, 
-                                                            int* outReturnCode)
+    SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2CleanupCommandWindows(const System2CommandInfo* info)
     {
-        DWORD exitCode;
-        if(!GetExitCodeProcess(info->ChildProcessHandle, &exitCode))
-            return SYSTEM2_RESULT_COMMAND_WAIT_ASYNC_FAILED;
-        
         if(info->RedirectOutput)
         {
             if(!CloseHandle(info->ChildToParentPipes[SYSTEM2_FD_READ]))
@@ -949,28 +1080,39 @@ SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2GetCommandReturnValueSync(const System
         }
 
         CloseHandle(info->ChildProcessHandle);
-        *outReturnCode = exitCode;
         return SYSTEM2_RESULT_SUCCESS;
     }
     
     SYSTEM2_FUNC_PREFIX 
+    SYSTEM2_RESULT System2GetCommandReturnValueAsyncWindows(const System2CommandInfo* info, 
+                                                            int* outReturnCode,
+                                                            bool manualCleanup)
+    {
+        DWORD exitCode;
+        if(!GetExitCodeProcess(info->ChildProcessHandle, &exitCode))
+            return SYSTEM2_RESULT_COMMAND_WAIT_ASYNC_FAILED;
+        
+        if( exitCode == STILL_ACTIVE && 
+            WaitForSingleObject(info->ChildProcessHandle, 0) == WAIT_TIMEOUT)
+        {
+            return SYSTEM2_RESULT_COMMAND_NOT_FINISHED;
+        }
+
+        *outReturnCode = exitCode;
+        
+        if(!manualCleanup)
+            return System2CleanupCommandWindows(info)
+        else
+            return SYSTEM2_RESULT_SUCCESS;
+    }
+    
+    SYSTEM2_FUNC_PREFIX 
     SYSTEM2_RESULT System2GetCommandReturnValueSyncWindows( const System2CommandInfo* info, 
-                                                            int* outReturnCode)
+                                                            int* outReturnCode,
+                                                            bool manualCleanup)
     {
         if(WaitForSingleObject(info->ChildProcessHandle, INFINITE) != 0)
             return SYSTEM2_RESULT_COMMAND_WAIT_SYNC_FAILED;
-        
-        if(info->RedirectOutput)
-        {
-            if(!CloseHandle(info->ChildToParentPipes[SYSTEM2_FD_READ]))
-                return SYSTEM2_RESULT_PIPE_FD_CLOSE_FAILED;
-        }
-        
-        if(info->RedirectInput)
-        {
-            if(!CloseHandle(info->ParentToChildPipes[SYSTEM2_FD_WRITE]))
-                return SYSTEM2_RESULT_PIPE_FD_CLOSE_FAILED;
-        }
         
         DWORD exitCode;
         if(!GetExitCodeProcess(info->ChildProcessHandle, &exitCode))
@@ -980,9 +1122,12 @@ SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2GetCommandReturnValueSync(const System
             return SYSTEM2_RESULT_COMMAND_TERMINATED;
         }
         
-        CloseHandle(info->ChildProcessHandle);
         *outReturnCode = exitCode;
-        return SYSTEM2_RESULT_SUCCESS;
+        
+        if(!manualCleanup)
+            return System2CleanupCommandWindows(info)
+        else
+            return SYSTEM2_RESULT_SUCCESS;
     }
 #endif
 
@@ -1039,14 +1184,26 @@ SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2WriteToInput( const System2CommandInfo
     #endif
 }
 
-SYSTEM2_FUNC_PREFIX 
-SYSTEM2_RESULT System2GetCommandReturnValueAsync(   const System2CommandInfo* info, 
-                                                    int* outReturnCode)
+SYSTEM2_FUNC_PREFIX SYSTEM2_RESULT System2CleanupCommand(const System2CommandInfo* info)
 {
     #if defined(__unix__) || defined(__APPLE__)
-        return System2GetCommandReturnValueAsyncPosix(info, outReturnCode);
+        return System2CleanupCommandPosix(info);
     #elif defined(_WIN32)
-        return System2GetCommandReturnValueAsyncWindows(info, outReturnCode);
+        return System2CleanupCommandWindows(info);
+    #else
+        return SYSTEM2_RESULT_UNSUPPORTED_PLATFORM; 
+    #endif
+}
+
+SYSTEM2_FUNC_PREFIX 
+SYSTEM2_RESULT System2GetCommandReturnValueAsync(   const System2CommandInfo* info, 
+                                                    int* outReturnCode,
+                                                    bool manualCleanup)
+{
+    #if defined(__unix__) || defined(__APPLE__)
+        return System2GetCommandReturnValueAsyncPosix(info, outReturnCode, manualCleanup);
+    #elif defined(_WIN32)
+        return System2GetCommandReturnValueAsyncWindows(info, outReturnCode, manualCleanup);
     #else
         return SYSTEM2_RESULT_UNSUPPORTED_PLATFORM; 
     #endif
@@ -1054,12 +1211,13 @@ SYSTEM2_RESULT System2GetCommandReturnValueAsync(   const System2CommandInfo* in
 
 SYSTEM2_FUNC_PREFIX 
 SYSTEM2_RESULT System2GetCommandReturnValueSync(const System2CommandInfo* info, 
-                                                int* outReturnCode)
+                                                int* outReturnCode,
+                                                bool manualCleanup)
 {
     #if defined(__unix__) || defined(__APPLE__)
-        return System2GetCommandReturnValueSyncPosix(info, outReturnCode);
+        return System2GetCommandReturnValueSyncPosix(info, outReturnCode, manualCleanup);
     #elif defined(_WIN32)
-        return System2GetCommandReturnValueSyncWindows(info, outReturnCode);
+        return System2GetCommandReturnValueSyncWindows(info, outReturnCode, manualCleanup);
     #else
         return SYSTEM2_RESULT_UNSUPPORTED_PLATFORM; 
     #endif
