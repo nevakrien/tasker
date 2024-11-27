@@ -19,6 +19,7 @@
     #include <errno.h>
     #include <sys/types.h>
     #include <sys/wait.h>
+    #include <poll.h>
 
     typedef struct {
         FILE *stream;       // File pointer for standard I/O
@@ -93,6 +94,29 @@ static inline int cpipe_available_bytes(CPipe *pipe) {
     }
     int available = 0;
     int fd = fileno(pipe->stream); // Get the file descriptor
+    
+    // Use poll() to check if there is data in the pipe
+    struct pollfd pfd = { .fd = fd, .events = POLLIN };
+    int poll_result = poll(&pfd, 1, 0); // Non-blocking poll
+    if (poll_result > 0) {
+        if (pfd.revents & POLLIN) {
+            // Data is ready in the pipe, force it into the FILE
+            int c = getc(pipe->stream); 
+            if (c != EOF) {
+                ungetc(c, pipe->stream); 
+            } else {
+                if (feof(pipe->stream)) {
+                    return EOF;
+                }
+                CPIPW_LOG_ERROR("getc failed");
+                return -2; // Error
+            }
+        }
+    } else if (poll_result < 0) {
+        CPIPW_LOG_ERROR("poll failed");
+        return -2; // Error
+    }
+
     if (ioctl(fd, FIONREAD, &available) == -1) {
         if (feof(pipe->stream)) {
             return EOF; // Done (EOF)

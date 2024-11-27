@@ -7,6 +7,7 @@
 #define TASK_CHUNK_SIZE (2*BUFSIZ)
 
 #define ECHO_COMMAND(x) ("echo "x" && "x)
+#define ECHO_COMMAND_DONE(x) ("echo "x" && "x" && echo done")
 
 typedef struct CMDOutPut CMDOutPut;
 struct CMDOutPut{
@@ -25,6 +26,14 @@ typedef struct {
 static inline void init_cmd_output(CMDOutPut* cmd){
 	cmd->pos = 0;
 	cmd->next =NULL;
+}
+
+static inline void print_cmd_output(CMDOutPut* cmd){
+	for(;cmd!=NULL;cmd=cmd->next){
+		for(size_t i=0;i<cmd->pos;i++){
+			putchar(cmd->data[i]);
+		}
+	}
 }
 
 static inline bool task_init(RuningTask* task,const char* command) {
@@ -52,7 +61,10 @@ static inline bool check_on_task(RuningTask* task){
 		task->statuscode = cpipe_close(&task->pipe);
 		return true;
 	}
+
 	if(available==0){
+		if(cpipe_check(&task->pipe))
+			return true;
 		return false;
 	}
 
@@ -79,6 +91,6 @@ static inline bool check_on_task(RuningTask* task){
 
 	return check_on_task(task);
 
-}
+}  
 
 #endif // COMMAND_CONTEXT_H

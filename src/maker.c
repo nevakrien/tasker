@@ -19,14 +19,16 @@ int main() {
         return 1;
     }
 
+    printf("Output: ");
     char buffer[128];
     while (1) {
         int available = cpipe_available_bytes(&pipe);
         if (available > 0) {
-            int bytes_read = cpipe_read(&pipe, buffer, sizeof(buffer) - 1);
+            int bytes_read = cpipe_read(&pipe, buffer, 1);
             if (bytes_read > 0) {
-                buffer[bytes_read] = '\0';
-                printf("Output: %s", buffer);
+                putchar(buffer[0]);
+                // buffer[bytes_read] = '\0';
+                // printf("Output: %s", buffer);
             }
         } else if (available==EOF||feof(pipe.stream)) {
             break;
@@ -35,6 +37,7 @@ int main() {
             return 1;
         }
     }
+    putchar('\n');
 
     int exit_code = cpipe_close(&pipe);
     printf("Process exit code: %d\n", exit_code);
