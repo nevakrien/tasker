@@ -1,53 +1,46 @@
-#include "System2.h"
-#include <stdint.h>
+#include "cross_pipe.h" // Include the CPipe library
+#include <stdio.h>
 
-static inline System2CommandInfo make_info(){
-	System2CommandInfo info; //= {0};
-	memset(&info, 0, sizeof(System2CommandInfo));
-	info.RedirectInput = true;
-    info.RedirectOutput = true;
-    return info;
-}
 
-static inline void abord_on_fail(SYSTEM2_RESULT result){
-	if(result!=SYSTEM2_RESULT_SUCCESS){
-		printf("system2 failed %d\n",result);
-		fflush(stdout);
-		exit(1);
-	}
-}
 
-int main()  {
-	printf("started\n");
+#define COMAND "gcc -g3 -std=c99 -Wall src/hello_world.c -obin/hello_world"
 
-	System2CommandInfo info = make_info();
-	const char* args[] = {"gcc","-g3","-std=c99","-Wall","src/hello_world.c","-obin/hello_world"}; 
-	SYSTEM2_RESULT result=System2RunSubprocess("gcc",args,sizeof(args),&info);
-	abord_on_fail(result);
 
-	int return_code;
-	result = System2GetCommandReturnValueSync(&info,&return_code,true);
-	if(return_code){
-		printf("got return code %d\n",return_code);
-	}
-	abord_on_fail(result);
 
-	uint32_t bytes_read = 0;
-	char buffer[BUFSIZ] = {0};
-	do {
-		result =  System2ReadFromOutput(&info,buffer,BUFSIZ,&bytes_read);
-		for (uint32_t i = 0; i < bytes_read; i++) {
-	        putchar(buffer[i]);
-	    }
-			
-	} while(result == SYSTEM2_RESULT_READ_NOT_FINISHED);
+int main() {
+    const char *command = "echo "COMAND" && "COMAND;
 
-	abord_on_fail(result);
+    CPipe pipe = cpipe_open(command, "r");
 
-	
-	abord_on_fail(System2CleanupCommand(&info));
+    if (!pipe.stream) {
+        fprintf(stderr, "Failed to open pipe.\n");
+        return 1;
+    }
 
-	printf("yay\n");
-	return 0;
-	
+    if (cpipe_done(&pipe)){
+        printf("wow done fast no output\n");
+        return 1;
+    }
+
+    char buffer[128];
+    while (1) {
+        int available = cpipe_available_bytes(&pipe);
+        if (available > 0) {
+            int bytes_read = cpipe_read(&pipe, buffer, sizeof(buffer) - 1);
+            if (bytes_read > 0) {
+                buffer[bytes_read] = '\0';
+                printf("Output: %s", buffer);
+            }
+        } else if (available==EOF||feof(pipe.stream)) {
+            break;
+        } else if(available<0){
+            fprintf(stderr, "error with available%d.\n",available);
+            return 1;
+        }
+    }
+
+    int exit_code = cpipe_close(&pipe);
+    printf("Process exit code: %d\n", exit_code);
+
+    return 0;
 }
