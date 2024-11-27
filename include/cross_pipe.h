@@ -87,6 +87,10 @@ static inline int cpipe_available_bytes(CPipe *pipe) {
 
     return (int)bytes_available; // Return number of bytes available
 #else
+    if (pipe->stream == NULL) {
+        CPIPW_LOG_ERROR("Error: stream is NULL");
+        return -2; // Handle the error appropriately
+    }
     int available = 0;
     int fd = fileno(pipe->stream); // Get the file descriptor
     if (ioctl(fd, FIONREAD, &available) == -1) {

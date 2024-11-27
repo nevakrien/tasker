@@ -1,14 +1,11 @@
 #include "cross_pipe.h" // Include the CPipe library
+#include "command_context.h"
 #include <stdio.h>
 
-
-
-#define COMAND "gcc -g3 -std=c99 -Wall src/hello_world.c -obin/hello_world"
-
-
+#define COMMAND "gcc -g3 -std=c99 -Wall src/hello_world.c -obin/hello_world"
 
 int main() {
-    const char *command = "echo "COMAND" && "COMAND;
+    const char *command = ECHO_COMMAND(COMMAND);
 
     CPipe pipe = cpipe_open(command, "r");
 
