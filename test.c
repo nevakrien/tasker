@@ -10,6 +10,9 @@
 #include "terminal.h"
 #include "protocol.h"
 
+#include "intrupt_cleanup.h"
+
+
 // Ensure NUM_WORKERS and BUFFER_SIZE are included
 #ifndef NUM_WORKERS
 #define NUM_WORKERS 10
@@ -302,6 +305,10 @@ int main(int argc, char* argv[]) {
         }
         return EXIT_FAILURE;
     }
+
+    setup_interrupt_handler();
+    tcp_socket_to_cleanup = state.tcp_server;
+    udp_socket_to_cleanup = state.udp_server;
 
     fprintf(stdout, "Server running. TCP: %u, UDP: %u\n", tcp_port, udp_port);
 

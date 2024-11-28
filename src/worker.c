@@ -149,7 +149,7 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < 3; i++) {
         LOG_TO_STDOUT("From Worker %d: output line %d\n", worker_id, i + 1);
         SEND_UPDATE_MESSAGE(udp_socket, &server_address, worker_id);
-        sleep(1);
+        sleep(0.001);
     }
 
     // Shutdown Message
