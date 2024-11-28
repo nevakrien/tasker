@@ -7,10 +7,10 @@
 
 #ifdef _WIN32
 #define POPEN _popen
-#define POCLOSE _pclose
+#define PCLOSE _pclose
 #else
 #define POPEN popen
-#define POCLOSE pclose
+#define PCLOSE pclose
 #endif
 
 #include "tinycsocket.h"
