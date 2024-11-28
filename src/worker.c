@@ -9,9 +9,10 @@
 #define TINYCSOCKET_IMPLEMENTATION
 #include "tinycsocket.h"
 #include "protocol.h"
+#include "intrupt_cleanup.h"
 
-// #define DEBUG_LOG(x, ...) fprintf(stderr,x,##__VA_ARGS__)
-#define DEBUG_LOG(x, ...) 
+#define DEBUG_LOG(x, ...) fprintf(stderr,x,##__VA_ARGS__)
+// #define DEBUG_LOG(x, ...) 
 
 static size_t total_bytes_written = 0;
 
@@ -45,12 +46,19 @@ static size_t total_bytes_written = 0;
     } while (0)
 
 
+
+
 void print_usage(const char* program_name) {
     (void)program_name;
     DEBUG_LOG( "Usage: %s <worker_id> <tcp_port> <udp_port>\n", program_name);
 }
 
-int main(int argc, char* argv[]) {
+//global args
+worker_id_t worker_id;
+struct TcsAddress server_address;
+TcsSocket tcp_socket, udp_socket;
+
+int setup(int argc,char* argv[]){
     if (argc != 4) {
         print_usage(argv[0]);
         return EXIT_FAILURE;
@@ -62,14 +70,12 @@ int main(int argc, char* argv[]) {
     }
 
     // Parse arguments
-    worker_id_t worker_id = atoi(argv[1]);
+    worker_id = atoi(argv[1]);
     uint16_t tcp_port = (uint16_t)atoi(argv[2]);
     uint16_t udp_port = (uint16_t)atoi(argv[3]);
-
-    TcsSocket tcp_socket, udp_socket;
-    tcp_socket = udp_socket = TCS_NULLSOCKET;
-
     
+    tcp_socket = udp_socket = TCS_NULLSOCKET;
+    setup_interrupt_handler();
 
     // Initialize TCP socket
     if (tcs_create(&tcp_socket, TCS_TYPE_TCP_IP4) != TCS_SUCCESS) {
@@ -82,6 +88,9 @@ int main(int argc, char* argv[]) {
         tcs_destroy(&tcp_socket);
         return EXIT_FAILURE;
     }
+
+    //add it to the intrupt handler
+    tcp_socket_to_cleanup = tcp_socket;
 
     // Send worker ID over TCP
     if (tcs_send(tcp_socket, (const uint8_t*)&worker_id, sizeof(worker_id), TCS_MSG_SENDALL, NULL) != TCS_SUCCESS) {
@@ -100,8 +109,10 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
+    udp_socket_to_cleanup = udp_socket;
+
+
     // Create server address for UDP communication
-    struct TcsAddress server_address;
     char address_buffer[256];
     sprintf(address_buffer, "127.0.0.1:%u", udp_port);
 
@@ -109,6 +120,26 @@ int main(int argc, char* argv[]) {
         DEBUG_LOG( "Failed to create server address for UDP communication.\n");
         tcs_destroy(&tcp_socket);
         tcs_destroy(&udp_socket);
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
+}
+
+int cleanup(){
+    tcs_destroy(&tcp_socket);
+    tcs_destroy(&udp_socket);
+
+    if (tcs_lib_free() != TCS_SUCCESS) {
+        DEBUG_LOG( "Could not free tinycsocket.\n");
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
+}
+
+int main(int argc, char* argv[]) {
+    if(setup(argc,argv)==EXIT_FAILURE){
         return EXIT_FAILURE;
     }
 
@@ -167,15 +198,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Cleanup
-    tcs_destroy(&tcp_socket);
-    tcs_destroy(&udp_socket);
-
-    if (tcs_lib_free() != TCS_SUCCESS) {
-        DEBUG_LOG( "Could not free tinycsocket.\n");
-        return EXIT_FAILURE;
-    }
-
-    return EXIT_SUCCESS;
+    return cleanup();
 }
 

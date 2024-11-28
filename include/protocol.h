@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#define MAX_COMMAND 10*FILENAME_MAX
+
 #define WORKER_MESSAGE_MAGIC 0xDEADBEEF
 
 typedef enum {

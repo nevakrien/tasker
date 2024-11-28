@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "platform.h"
+#include "protocol.h"
 
 typedef struct {
 	TcsSocket tcp_socket;

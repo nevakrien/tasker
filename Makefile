@@ -26,8 +26,8 @@ bin/intrupt_cleanup.o: src/intrupt_cleanup.c
 bin/hello_world: src/hello_world.c
 	$(CC) $(CFLAGS) -o bin/hello_world src/hello_world.c
 
-bin/worker: src/worker.c
-	$(CC) $(CFLAGS) -o bin/worker src/worker.c
+bin/worker: src/worker.c bin/intrupt_cleanup.o
+	$(CC) $(CFLAGS) -o bin/worker src/worker.c bin/intrupt_cleanup.o
 
 # Build object files
 test: test.c bin/intrupt_cleanup.o
@@ -35,7 +35,6 @@ test: test.c bin/intrupt_cleanup.o
 
 run: test bin/worker
 	./test 6969 4242
-	rm .temp*
 
 # Clean up the build files
 clean:
@@ -67,8 +66,8 @@ bin\intrupt_cleanup.o: src\intrupt_cleanup.c
 bin\hello_world.exe: src\hello_world.c
 	$(CC) $(CFLAGS) -o bin\hello_world.exe src\hello_world.c
 
-bin\worker.exe: src\worker.c
-	$(CC) $(CFLAGS) -o bin\worker.exe src\worker.c
+bin\worker.exe: src\worker.c bin\intrupt_cleanup.o
+	$(CC) $(CFLAGS) -o bin\worker.exe src\worker.c bin\intrupt_cleanup.o
 
 # Build object files
 test.exe: test.c bin\intrupt_cleanup.o
@@ -76,7 +75,6 @@ test.exe: test.c bin\intrupt_cleanup.o
 
 run: test.exe bin\worker.exe
 	.\test.exe 6969 4242
-	del /f /q .temp*
 
 # Clean up the build files
 clean:
