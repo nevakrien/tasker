@@ -44,7 +44,11 @@ int initialize_server_state(ServerState* state, uint16_t tcp_port, uint16_t udp_
     state->udp_server = TCS_NULLSOCKET;
 
     fprintf(stderr, "Initializing TCP server...\n");
-
+    if (tcs_lib_init() != TCS_SUCCESS) {
+        fprintf(stderr,"Failed to initialize tinycsocket.\n");
+        return EXIT_FAILURE;
+    }
+        
     // Create the TCP server socket
     if (tcs_create(&state->tcp_server, TCS_TYPE_TCP_IP4) != TCS_SUCCESS) {
         fprintf(stderr, "Failed to create TCP server socket. Check system resources and port conflicts.\n");
@@ -128,9 +132,10 @@ int inlize_workers(TerminalWorker workers[], size_t num_workers, ServerState* st
     for (size_t i = 0; i < num_workers; i++) {
         TcsSocket worker_socket = TCS_NULLSOCKET;
 
+        int code;
         // Accept a connection from a worker
-        if (tcs_accept(state->tcp_server, &worker_socket, NULL) != TCS_SUCCESS) {
-            fprintf(stderr, "Failed to accept connection from worker.\n");
+        if ((code=tcs_accept(state->tcp_server, &worker_socket, NULL)) != TCS_SUCCESS) {
+            fprintf(stderr, "Failed to accept connection from worker.,%d\n",code);
             return -3;
         }
 
