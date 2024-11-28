@@ -10,7 +10,7 @@ int main() {
         "echo Task1 && sleep 1",
         "echo Task2 && sleep 0.1 && echo Done",
         // "ls",
-        "gcc -O2 src/hello_world.c -ohello_world"
+        "zig cc -O2 src/hello_world.c -ohello_world"
     };
 
     // Array of TaskHandles

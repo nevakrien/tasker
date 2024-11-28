@@ -92,7 +92,12 @@ static int init_start_task(TaskHandle *task, const char *command) {
 
     // Prepare the worker command
     char worker_command[MAX_COMMAND];
-    snprintf(worker_command, sizeof(worker_command), "./bin/worker %s %s", task->task_name, command);
+    #ifdef _WIN32
+        snprintf(worker_command, sizeof(worker_command), "bin\\worker.exe %s %s", task->task_name, command);
+    #else
+        snprintf(worker_command, sizeof(worker_command), "./bin/worker %s %s", task->task_name, command);
+    #endif
+
 
     // Start the worker process
     task->process = POPEN(worker_command, "r");

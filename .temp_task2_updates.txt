@@ -1,2 +1,0 @@
-Task started: echo Task2
-Task2
