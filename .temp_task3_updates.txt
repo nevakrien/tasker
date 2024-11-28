@@ -1,0 +1,13 @@
+Task started: ls
+a.exe
+a.pdb
+bin
+include
+LICENSE
+Makefile
+README.md
+src
+test
+test.c
+test.exe
+test.pdb

@@ -9,8 +9,8 @@ int main() {
     const char *commands[] = {
         "echo Task1 && sleep 1",
         "echo Task2 && sleep 0.1 && echo Done",
-        // "ls",
-        "zig cc -O2 src/hello_world.c -ohello_world"
+        "ls",
+        // "zig cc -O2 src/hello_world.c -ohello_world"
     };
 
     // Array of TaskHandles
