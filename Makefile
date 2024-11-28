@@ -15,10 +15,11 @@ bin/worker: src/worker.c
 
 # Build object files
 test: test.c
-	$(CC) $(CFLAGS) -o test test.c
+	$(CC) $(CFLAGS) -otest test.c
 
 run: test bin/worker
 	 ./test
+	 rm .temp*
 
 # Clean up the build files
 clean:
