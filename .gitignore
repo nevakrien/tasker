@@ -1,6 +1,8 @@
 bin/*
 test
 test.exe
+build
+build/*
 
 .vs
 .vs/*
