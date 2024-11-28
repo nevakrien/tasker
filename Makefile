@@ -18,7 +18,7 @@ test: test.c
 	$(CC) $(CFLAGS) -otest test.c
 
 run: test bin/worker
-	 ./test
+	 ./test 6969 4242
 	 rm .temp*
 
 # Clean up the build files

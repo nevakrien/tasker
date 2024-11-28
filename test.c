@@ -1,80 +1,180 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include "task.h"
+#include <stdint.h>
+#define TINYCSOCKET_IMPLEMENTATION
+#include "tinycsocket.h"
+#include "terminal.h"
 
+// Ensure NUM_WORKERS and BUFFER_SIZE are included
+#ifndef NUM_WORKERS
+#define NUM_WORKERS 10
+#endif
 
-int main() {
-    // Task names and commands
-    const char *commands[] = {
-        "echo Task1 && sleep 1",
-        "echo Task2 && sleep 0.1 && echo Done",
-        "ls",
-        // "zig cc -O2 src/hello_world.c -ohello_world"
-    };
+#ifndef BUFFER_SIZE
+#define BUFFER_SIZE 1024
+#endif
 
-    // Array of TaskHandles
-    TaskHandle tasks[3];
+// Global state struct
+typedef struct {
+    TcsSocket tcp_server;
+    TcsSocket udp_server;
+    uint16_t tcp_port;
+    uint16_t udp_port;
+} ServerState;
 
-    // Initialize tasks with only task names set
-    for (size_t i = 0; i < 3; i++) {
-        // memset(&tasks[i], 0, sizeof(TaskHandle)); // Zero all fields
-        tasks[i]=(TaskHandle){0};
-        snprintf(tasks[i].task_name, sizeof(tasks[i].task_name), "task%ld", i + 1);
+int initialize_server_state(ServerState* state, uint16_t tcp_port, uint16_t udp_port) {
+    state->tcp_port = tcp_port;
+    state->udp_port = udp_port;
+
+    // Initialize sockets to TCS_NULLSOCKET
+    state->tcp_server = TCS_NULLSOCKET;
+    state->udp_server = TCS_NULLSOCKET;
+
+    fprintf(stderr, "Initializing TCP server...\n");
+
+    // Create and bind the TCP server
+    if (tcs_create(&state->tcp_server, TCS_TYPE_TCP_IP4) != TCS_SUCCESS) {
+        fprintf(stderr, "Failed to create TCP server socket. Check system resources and port conflicts.\n");
+        return -1;
     }
 
-    // Start all tasks
-    for (size_t i = 0; i < 3; i++) {
-        if (init_start_task(&tasks[i], commands[i]) == 0) {
-            printf("Started task: %s\n", tasks[i].task_name);
-        } else {
-            fprintf(stderr, "Failed to start task: %s\n", tasks[i].task_name);
+    fprintf(stderr, "TCP server socket created successfully.\n");
+
+    if (tcs_bind(state->tcp_server, tcp_port) != TCS_SUCCESS) {
+        fprintf(stderr, "Failed to bind TCP server to port %u. Port might already be in use.\n", tcp_port);
+        tcs_destroy(&state->tcp_server);
+        return -1;
+    }
+
+    fprintf(stderr, "TCP server bound to port %u successfully.\n", tcp_port);
+
+    if (tcs_listen(state->tcp_server, NUM_WORKERS) != TCS_SUCCESS) {
+        fprintf(stderr, "Failed to listen on TCP server.\n");
+        tcs_destroy(&state->tcp_server);
+        return -1;
+    }
+
+    fprintf(stderr, "TCP server is now listening.\n");
+
+    fprintf(stderr, "Initializing UDP server...\n");
+
+    // Create and bind the UDP server
+    if (tcs_create(&state->udp_server, TCS_TYPE_UDP_IP4) != TCS_SUCCESS) {
+        fprintf(stderr, "Failed to create UDP server socket. Check system resources.\n");
+        tcs_destroy(&state->tcp_server);
+        return -1;
+    }
+
+    fprintf(stderr, "UDP server socket created successfully.\n");
+
+    if (tcs_bind(state->udp_server, udp_port) != TCS_SUCCESS) {
+        fprintf(stderr, "Failed to bind UDP server to port %u. Port might already be in use.\n", udp_port);
+        tcs_destroy(&state->tcp_server);
+        tcs_destroy(&state->udp_server);
+        return -1;
+    }
+
+    fprintf(stderr, "UDP server bound to port %u successfully.\n", udp_port);
+    return 0; // Success
+}
+
+
+// Function to clean up the server state
+void cleanup_server_state(ServerState* state) {
+    tcs_destroy(&state->tcp_server);
+    tcs_destroy(&state->udp_server);
+}
+
+int main(int argc, char* argv[]) {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <tcp_port> <udp_port>\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    uint16_t tcp_port = (uint16_t)atoi(argv[1]);
+    uint16_t udp_port = (uint16_t)atoi(argv[2]);
+
+    if (tcs_lib_init() != TCS_SUCCESS) {
+        fprintf(stderr, "Failed to initialize tinycsocket.\n");
+        return EXIT_FAILURE;
+    }
+
+    ServerState state;
+    if (initialize_server_state(&state, tcp_port, udp_port) != 0) {
+        fprintf(stderr, "Failed to initialize server state.\n");
+        if (tcs_lib_free() != TCS_SUCCESS) {
+            fprintf(stderr, "Could not free tinycsocket.\n");
         }
+        return EXIT_FAILURE;
     }
 
-    // Monitor tasks
-    char buffer[FILENAME_MAX];
-    int tasks_remaining = 3;
-    while (tasks_remaining > 0) {
-        for (size_t i = 0; i < 3; i++) {
-            // if(tasks[i].process==NULL){
-            //     continue;
-            // }
-            int result = retrieve_task_data(&tasks[i], buffer, sizeof(buffer));
-            if (result > 0) {
-                printf("[%s Update]: %s", tasks[i].task_name, buffer);
-            } else if (result == 0) {
-                
-            } else if (result == EOF) {
-                printf("[%s]: Task completed.\n", tasks[i].task_name);
-                // close_task(&tasks[i]);
-                tasks_remaining--;
-            } else {
-                fprintf(stderr, "[%s]: Error retrieving task data: %s\n", tasks[i].task_name, strerror(errno));
-                // close_task(&tasks[i]);
-                tasks_remaining--;
+    fprintf(stdout, "Server running. TCP: %u, UDP: %u\n", tcp_port, udp_port);
+
+    TerminalWorker workers[NUM_WORKERS] = {0};
+
+    // Start all workers
+    for (int i = 0; i < NUM_WORKERS; i++) {
+        workers[i].process = start_worker(i, tcp_port, udp_port);
+        if (!workers[i].process) {
+            fprintf(stderr, "Failed to start worker %d.\n", i);
+            for (int j = 0; j < i; j++) {
+                pclose(workers[j].process);
             }
-
-            // // Check task status
-            // int status = check_task_status(&tasks[i]);
-            // if (status > 0) {
-            //     printf("[%s]: Task completed with status %d.\n", tasks[i].task_name, status);
-            //     close_task(&tasks[i]);
-            //     tasks[i].process = NULL; // Mark task as closed
-            //     tasks_remaining--;
-            // } else if (status == 0) {
-            //     printf("[%s]: Still running...\n", tasks[i].task_name);
-            // } else {
-            //     fprintf(stderr, "[%s]: Error checking status: %s\n", tasks[i].task_name, strerror(errno));
-            //     close_task(&tasks[i]);
-            //     tasks[i].process = NULL; // Mark task as closed
-            //     tasks_remaining--;
-            // }
-        
+            cleanup_server_state(&state);
+            if (tcs_lib_free() != TCS_SUCCESS) {
+                fprintf(stderr, "Could not free tinycsocket.\n");
+            }
+            return EXIT_FAILURE;
         }
-        sleep(1); // Poll periodically
     }
 
-    printf("All tasks completed.\n");
-    return 0;
+    // Map workers to TCP connections
+    for (int i = 0; i < NUM_WORKERS; i++) {
+        TcsSocket worker_socket = TCS_NULLSOCKET;
+        if (tcs_accept(state.tcp_server, &worker_socket, NULL) != TCS_SUCCESS) {
+            fprintf(stderr, "Failed to accept connection from worker.\n");
+            return EXIT_FAILURE;
+        }
+
+        // Receive worker ID from the connection
+        uint32_t worker_id;
+        size_t received;
+        if (tcs_receive(worker_socket, (uint8_t*)&worker_id, sizeof(worker_id), TCS_NO_FLAGS, &received) != TCS_SUCCESS || received != sizeof(worker_id)) {
+            fprintf(stderr, "Failed to receive worker ID.\n");
+            tcs_destroy(&worker_socket);
+            return EXIT_FAILURE;
+        }
+
+        if (worker_id >= NUM_WORKERS) {
+            fprintf(stderr, "Invalid worker ID received: %u.\n", worker_id);
+            tcs_destroy(&worker_socket);
+            return EXIT_FAILURE;
+        }
+
+        // Match socket to the process
+        workers[worker_id].tcp_socket = worker_socket;
+        fprintf(stdout, "Worker %u connected successfully.\n", worker_id);
+    }
+
+    // Cleanup and close resources
+    for (int i = 0; i < NUM_WORKERS; i++) {
+        if (workers[i].tcp_socket != TCS_NULLSOCKET) {
+            tcs_destroy(&workers[i].tcp_socket);
+        }
+        if (workers[i].process) {
+            pclose(workers[i].process);
+        }
+    }
+
+    cleanup_server_state(&state);
+
+    if (tcs_lib_free() != TCS_SUCCESS) {
+        fprintf(stderr, "Could not free tinycsocket.\n");
+        return EXIT_FAILURE;
+    }
+
+    fprintf(stderr, "test passed.\n");
+
+    return EXIT_SUCCESS;
 }
