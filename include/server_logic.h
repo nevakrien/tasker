@@ -31,7 +31,10 @@ typedef struct {
 
 //use just 100 ports should be fine
 #define SAFE_PORT_RANGE_START 4242
-#define SAFE_PORT_RANGE_END 4269	
+#define SAFE_PORT_RANGE_END 6969	
+
+// #define DEBUG_LOG(x, ...) fprintf(stderr,x,##__VA_ARGS__)
+#define DEBUG_LOG(x, ...) 
 
 static int32_t open_find_port(TcsSocket* socket, uint16_t start_port, uint16_t end_port) {
     if (!socket) {
@@ -41,18 +44,18 @@ static int32_t open_find_port(TcsSocket* socket, uint16_t start_port, uint16_t e
 
     uint16_t port = start_port;
     while (port <= end_port) {
-        fprintf(stderr, "Attempting to bind to port %u...\n", port);
+        DEBUG_LOG( "Attempting to bind to port %u...\n", port);
         
         int code;
         if ((code=tcs_bind(*socket, port)) == TCS_SUCCESS) {
-            fprintf(stderr, "Successfully bound to port %u.\n", port);
+            DEBUG_LOG( "Successfully bound to port %u.\n", port);
             return (int32_t)port; // Return the successfully bound port
         }
-        fprintf(stderr, "got return code %d\n", code);
+        DEBUG_LOG( "got return code %d\n", code);
         port++;
     }
 
-    fprintf(stderr, "Failed to find an available port in range %u-%u.\n", 
+    DEBUG_LOG( "Failed to find an available port in range %u-%u.\n", 
             start_port, end_port);
     return TCS_ERROR_KERNEL; // Indicate failure to bind
 }
@@ -66,7 +69,7 @@ static int initialize_server_state(ServerState* state) {
     global_tcp_socket = TCS_NULLSOCKET;
     global_udp_socket = TCS_NULLSOCKET;
 
-    fprintf(stderr, "Initializing TCP server...\n");
+    DEBUG_LOG( "Initializing TCP server...\n");
     if (tcs_lib_init() != TCS_SUCCESS) {
         fprintf(stderr,"Failed to initialize tinycsocket.\n");
         return EXIT_FAILURE;
@@ -85,7 +88,7 @@ static int initialize_server_state(ServerState* state) {
         tcs_destroy(&global_tcp_socket);
         return -1;
     }
-    fprintf(stderr, "Timeout for TCP server set to %d ms.\n", TCP_SERVER_TIMEOUT_MS);
+    DEBUG_LOG( "Timeout for TCP server set to %d ms.\n", TCP_SERVER_TIMEOUT_MS);
 
     int32_t tcp_port = open_find_port(&global_tcp_socket,SAFE_PORT_RANGE_START,SAFE_PORT_RANGE_END);
     if(tcp_port<0){
@@ -95,7 +98,7 @@ static int initialize_server_state(ServerState* state) {
     state->tcp_port=tcp_port;
 
 
-    fprintf(stderr, "TCP server bound to port %u successfully.\n", state->tcp_port);
+    DEBUG_LOG( "TCP server bound to port %u successfully.\n", state->tcp_port);
 
     // Start listening on the TCP server
     if (tcs_listen(global_tcp_socket, BACKLOG) != TCS_SUCCESS) {
@@ -104,9 +107,9 @@ static int initialize_server_state(ServerState* state) {
         return -1;
     }
 
-    fprintf(stderr, "TCP server is now listening.\n");
+    DEBUG_LOG( "TCP server is now listening.\n");
 
-    fprintf(stderr, "Initializing UDP server...\n");
+    DEBUG_LOG( "Initializing UDP server...\n");
 
     // Create the UDP server socket
     if (tcs_create(&global_udp_socket, TCS_TYPE_UDP_IP4) != TCS_SUCCESS) {
@@ -122,7 +125,7 @@ static int initialize_server_state(ServerState* state) {
         tcs_destroy(&global_udp_socket);
         return -1;
     }
-    fprintf(stderr, "Timeout for UDP server set to %d ms.\n", UDP_SERVER_TIMEOUT_MS);
+    DEBUG_LOG( "Timeout for UDP server set to %d ms.\n", UDP_SERVER_TIMEOUT_MS);
 
     int32_t udp_port = open_find_port(&global_udp_socket,state->tcp_port+1,SAFE_PORT_RANGE_END);
     if(udp_port<0){
@@ -133,7 +136,7 @@ static int initialize_server_state(ServerState* state) {
     } 
     state->udp_port=udp_port;
 
-    fprintf(stderr, "UDP server bound to port %u successfully.\n", state->udp_port);
+    DEBUG_LOG( "UDP server bound to port %u successfully.\n", state->udp_port);
     return 0; // Success
 }
 
