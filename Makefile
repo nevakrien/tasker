@@ -1,8 +1,9 @@
 # Define the compiler
 CC = cc
 
+#windows needs -lws2_32 -lIphlpapi
 # Compiler flags (you can adjust as needed)
-CFLAGS = -Wall -Wextra -g3 --std=gnu99 -Iinclude
+CFLAGS = -Wall -Wextra -g3 --std=gnu99 -Iinclude 
 
 all: bin/hello_world test bin/worker
 
