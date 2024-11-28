@@ -58,6 +58,9 @@ static FILE* open_shared_file(const char *filename, const char *mode) {
 static inline FILE* open_shared_file(const char *filename, const char *mode) {
     return fopen(filename, mode); // POSIX already supports shared access
 }
+
+
+
 #endif
 
 

@@ -25,6 +25,28 @@ typedef struct {
     FILE *updates_file;  // For reading task updates
 } TaskHandle;
 
+static inline FILE *open_updates_file(const char *task_name, const char *mode) {
+    if (!task_name || !mode) {
+        errno = EINVAL; // Invalid arguments
+        return NULL;
+    }
+
+    char filename[FILENAME_MAX];
+    snprintf(filename, sizeof(filename), ".temp_%s_updates.txt", task_name);
+    return open_shared_file(filename, mode);
+}
+
+static inline FILE *open_error_file(const char *task_name, const char *mode) {
+    if (!task_name || !mode) {
+        errno = EINVAL; // Invalid arguments
+        return NULL;
+    }
+
+    char filename[FILENAME_MAX];
+    snprintf(filename, sizeof(filename), ".temp_%s_error_code.txt", task_name);
+    return open_shared_file(filename, mode);
+}
+
 
 
 // Initializes a TaskHandle for monitoring an existing task
@@ -40,13 +62,8 @@ static int init_open_task(TaskHandle *task) {
     task->updates_file = NULL;
 
     // Open shared files in read mode
-    char error_filename[FILENAME_MAX];
-    snprintf(error_filename, sizeof(error_filename), "%s_error_code.txt", task->task_name);
-    task->error_file = open_shared_file(error_filename, "r");
-
-    char updates_filename[FILENAME_MAX];
-    snprintf(updates_filename, sizeof(updates_filename), "%s_updates.txt", task->task_name);
-    task->updates_file = open_shared_file(updates_filename, "r");
+    task->error_file = open_error_file(task->task_name, "r");
+    task->updates_file = open_updates_file(task->task_name, "r");
 
     // Check if opening files failed
     if (!task->error_file && errno != ENOENT) {
@@ -75,7 +92,7 @@ static int init_start_task(TaskHandle *task, const char *command) {
 
     // Prepare the worker command
     char worker_command[MAX_COMMAND];
-    snprintf(worker_command, sizeof(worker_command), "./worker %s %s", task->task_name, command);
+    snprintf(worker_command, sizeof(worker_command), "./bin/worker %s %s", task->task_name, command);
 
     // Start the worker process
     task->process = POPEN(worker_command, "r");
@@ -89,28 +106,42 @@ static int init_start_task(TaskHandle *task, const char *command) {
     return init_open_task(task); // Initialize files
 }
 
+static int wait_for_task(TaskHandle *task) {
+    if (!task) return -1;
+
+    if (task->process) {
+        POCLOSE(task->process); // Close the running process, if any
+        task->process=NULL;
+        return 0;
+    }
+
+    return -1;
+}
+
 // Closes a task, ensuring resources are freed properly
 static int close_task(TaskHandle *task) {
     if (!task) return -1;
 
     if (task->process) {
         POCLOSE(task->process); // Close the running process, if any
+        task->process=NULL;
     }
-    if (task->error_file) fclose(task->error_file);
-    if (task->updates_file) fclose(task->updates_file);
+    if (task->error_file) {
+    	fclose(task->error_file);
+    	task->error_file=NULL;
+    }
+    if (task->updates_file) {
+    	fclose(task->updates_file);
+    	task->error_file=NULL;
+    }
 
-    free(task);
     return 0;
 }
 
 // Checks the status of the task (returns 0 if running, >0 if complete, -1 on error)
 static int check_task_status(TaskHandle *task) {
     if (!task->error_file) {
-        // Open the error code file lazily
-        char error_filename[FILENAME_MAX];
-        snprintf(error_filename, sizeof(error_filename), "%s_error_code.txt", task->task_name);
-
-        task->error_file = open_shared_file(error_filename, "r");
+        task->error_file = open_error_file(task->task_name, "r");
         if (!task->error_file) {
             if (errno == ENOENT) {
                 // File doesn't exist, task is still running
@@ -124,8 +155,9 @@ static int check_task_status(TaskHandle *task) {
     // File is open, attempt to read the status code
     char buffer[16];
     if (fgets(buffer, sizeof(buffer), task->error_file)) {
-        int status_code = atoi(buffer); // Parse the status code
-        return status_code; // Task is complete with this code
+    	return 1;
+        // int status_code = atoi(buffer); // Parse the status code
+        // return status_code; // Task is complete with this code
     }
 
     if (feof(task->error_file)) {
@@ -146,11 +178,7 @@ static ssize_t retrieve_task_data(TaskHandle *task, char *buffer, size_t buffer_
     }
 
     if (!task->updates_file) {
-        // Lazily open the updates file
-        char updates_filename[FILENAME_MAX];
-        snprintf(updates_filename, sizeof(updates_filename), "%s_updates.txt", task->task_name);
-
-        task->updates_file = open_shared_file(updates_filename, "r");
+        task->updates_file = open_updates_file(task->task_name, "r");
         if (!task->updates_file) {
             if (errno == ENOENT) {
                 // File doesn't exist yet; assume task is still running

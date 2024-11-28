@@ -17,11 +17,12 @@ bin/worker: src/worker.c
 test: test.c
 	$(CC) $(CFLAGS) -o test test.c
 
-run: src/maker.c clean
-	 $(CC) $(CFLAGS) src/maker.c && ./a.out && ./bin/hello_world
+run: test bin/worker
+	 ./test
 
 # Clean up the build files
 clean:
+	rm test
 	rm -rf bin
 	mkdir bin
 

@@ -14,20 +14,15 @@ int main(int argc, char *argv[]) {
     const char *task_name = argv[1];
     const char *command = argv[2];
 
-    char updates_filename[256];
-    char error_filename[256];
-
-    snprintf(updates_filename, sizeof(updates_filename), "%s_updates.txt", task_name);
-    snprintf(error_filename, sizeof(error_filename), "%s_error_code.txt", task_name);
 
     // Open updates and error files using shared file access
-    FILE *updates_file = open_shared_file(updates_filename, "w");
+    FILE *updates_file = open_updates_file(task_name, "w");
     if (!updates_file) {
         perror("Failed to open updates file");
         return 1;
     }
 
-    FILE *error_file = open_shared_file(error_filename, "w");
+    FILE *error_file = open_error_file(task_name, "w");
     if (!error_file) {
         perror("Failed to open error code file");
         fclose(updates_file);
