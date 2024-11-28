@@ -1,27 +1,27 @@
-#include "intrupt_cleanup.h"
+#include "global_sockets.h"
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 // Initialize global variables
-TcsSocket tcp_socket_to_cleanup;
-TcsSocket udp_socket_to_cleanup;
+TcsSocket global_tcp_socket;
+TcsSocket global_udp_socket;
 
 // Interrupt handler function
 void handle_interrupt(int signal) {
     fprintf(stderr, "Caught signal %d. Cleaning up resources...\n", signal);
 
     // Close TCP socket if valid
-    if (tcp_socket_to_cleanup != TCS_NULLSOCKET) {
-        tcs_destroy(&tcp_socket_to_cleanup);
-        tcp_socket_to_cleanup = TCS_NULLSOCKET;
+    if (global_tcp_socket != TCS_NULLSOCKET) {
+        tcs_destroy(&global_tcp_socket);
+        global_tcp_socket = TCS_NULLSOCKET;
         fprintf(stderr, "TCP socket closed.\n");
     }
 
     // Close UDP socket if valid
-    if (udp_socket_to_cleanup != TCS_NULLSOCKET) {
-        tcs_destroy(&udp_socket_to_cleanup);
-        udp_socket_to_cleanup = TCS_NULLSOCKET;
+    if (global_udp_socket != TCS_NULLSOCKET) {
+        tcs_destroy(&global_udp_socket);
+        global_udp_socket = TCS_NULLSOCKET;
         fprintf(stderr, "UDP socket closed.\n");
     }
 
@@ -36,8 +36,8 @@ void handle_interrupt(int signal) {
 
 // Function to set up the interrupt handler
 void setup_interrupt_handler(void) {
-     tcp_socket_to_cleanup= TCS_NULLSOCKET;
-     udp_socket_to_cleanup= TCS_NULLSOCKET;
+     global_tcp_socket= TCS_NULLSOCKET;
+     global_udp_socket= TCS_NULLSOCKET;
 
     signal(SIGINT, handle_interrupt);  // Ctrl+C
     signal(SIGTERM, handle_interrupt); // Termination request

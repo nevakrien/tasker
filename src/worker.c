@@ -9,10 +9,10 @@
 #define TINYCSOCKET_IMPLEMENTATION
 #include "tinycsocket.h"
 #include "protocol.h"
-#include "intrupt_cleanup.h"
+#include "global_sockets.h"
 
-#define DEBUG_LOG(x, ...) fprintf(stderr,x,##__VA_ARGS__)
-// #define DEBUG_LOG(x, ...) 
+// #define DEBUG_LOG(x, ...) fprintf(stderr,x,##__VA_ARGS__)
+#define DEBUG_LOG(x, ...) 
 
 static size_t total_bytes_written = 0;
 
@@ -56,8 +56,6 @@ void print_usage(const char* program_name) {
 //global args
 worker_id_t worker_id;
 struct TcsAddress server_address;
-TcsSocket tcp_socket, udp_socket;
-
 int setup(int argc,char* argv[]){
     if (argc != 4) {
         print_usage(argv[0]);
@@ -74,28 +72,26 @@ int setup(int argc,char* argv[]){
     uint16_t tcp_port = (uint16_t)atoi(argv[2]);
     uint16_t udp_port = (uint16_t)atoi(argv[3]);
     
-    tcp_socket = udp_socket = TCS_NULLSOCKET;
     setup_interrupt_handler();
 
     // Initialize TCP socket
-    if (tcs_create(&tcp_socket, TCS_TYPE_TCP_IP4) != TCS_SUCCESS) {
+    if (tcs_create(&global_tcp_socket, TCS_TYPE_TCP_IP4) != TCS_SUCCESS) {
         DEBUG_LOG( "Failed to create TCP socket.\n");
         return EXIT_FAILURE;
     }
 
-    if (tcs_connect(tcp_socket, "127.0.0.1", tcp_port) != TCS_SUCCESS) {
+    if (tcs_connect(global_tcp_socket, "127.0.0.1", tcp_port) != TCS_SUCCESS) {
         DEBUG_LOG( "Failed to connect to server on TCP port %u.\n", tcp_port);
-        tcs_destroy(&tcp_socket);
+        tcs_destroy(&global_tcp_socket);
         return EXIT_FAILURE;
     }
 
-    //add it to the intrupt handler
-    tcp_socket_to_cleanup = tcp_socket;
 
     // Send worker ID over TCP
-    if (tcs_send(tcp_socket, (const uint8_t*)&worker_id, sizeof(worker_id), TCS_MSG_SENDALL, NULL) != TCS_SUCCESS) {
+    WorkerInitTcp packet = {WORKER_MESSAGE_MAGIC,worker_id};
+    if (tcs_send(global_tcp_socket, (const uint8_t*)&packet, sizeof(packet), TCS_MSG_SENDALL, NULL) != TCS_SUCCESS) {
         DEBUG_LOG( "Failed to send worker ID over TCP.\n");
-        tcs_destroy(&tcp_socket);
+        tcs_destroy(&global_tcp_socket);
         return EXIT_FAILURE;
     }
 
@@ -103,13 +99,12 @@ int setup(int argc,char* argv[]){
     LOG_TO_STDOUT("From Worker %d: connected.\n", worker_id);
 
     // Initialize UDP socket
-    if (tcs_create(&udp_socket, TCS_TYPE_UDP_IP4) != TCS_SUCCESS) {
+    if (tcs_create(&global_udp_socket, TCS_TYPE_UDP_IP4) != TCS_SUCCESS) {
         DEBUG_LOG( "Failed to create UDP socket.\n");
-        tcs_destroy(&tcp_socket);
+        tcs_destroy(&global_tcp_socket);
         return EXIT_FAILURE;
     }
 
-    udp_socket_to_cleanup = udp_socket;
 
 
     // Create server address for UDP communication
@@ -118,8 +113,8 @@ int setup(int argc,char* argv[]){
 
     if (tcs_util_string_to_address(address_buffer, &server_address) != TCS_SUCCESS) {
         DEBUG_LOG( "Failed to create server address for UDP communication.\n");
-        tcs_destroy(&tcp_socket);
-        tcs_destroy(&udp_socket);
+        tcs_destroy(&global_tcp_socket);
+        tcs_destroy(&global_udp_socket);
         return EXIT_FAILURE;
     }
 
@@ -127,8 +122,8 @@ int setup(int argc,char* argv[]){
 }
 
 int cleanup(){
-    tcs_destroy(&tcp_socket);
-    tcs_destroy(&udp_socket);
+    tcs_destroy(&global_tcp_socket);
+    tcs_destroy(&global_udp_socket);
 
     if (tcs_lib_free() != TCS_SUCCESS) {
         DEBUG_LOG( "Could not free tinycsocket.\n");
@@ -153,7 +148,7 @@ int main(int argc, char* argv[]) {
         msg.payload.task_init.task_id = 42;
 
         size_t udp_sent;
-        if (tcs_send_to(udp_socket, (uint8_t*)&msg, sizeof(msg), TCS_NO_FLAGS, &server_address, &udp_sent) == TCS_SUCCESS && udp_sent == sizeof(msg)) {
+        if (tcs_send_to(global_udp_socket, (uint8_t*)&msg, sizeof(msg), TCS_NO_FLAGS, &server_address, &udp_sent) == TCS_SUCCESS && udp_sent == sizeof(msg)) {
             DEBUG_LOG( "Worker %d: Sent WORKER_MSG_TASK_INIT message.\n", worker_id);
         } else {
             DEBUG_LOG( "Worker %d: Failed to send WORKER_MSG_TASK_INIT message.\n", worker_id);
@@ -169,7 +164,7 @@ int main(int argc, char* argv[]) {
         msg.payload.task_done.status_code = 0;
 
         size_t udp_sent;
-        if (tcs_send_to(udp_socket, (const uint8_t*)&msg, sizeof(msg), TCS_NO_FLAGS, &server_address, &udp_sent) == TCS_SUCCESS && udp_sent == sizeof(msg)) {
+        if (tcs_send_to(global_udp_socket, (const uint8_t*)&msg, sizeof(msg), TCS_NO_FLAGS, &server_address, &udp_sent) == TCS_SUCCESS && udp_sent == sizeof(msg)) {
             DEBUG_LOG( "Worker %d: Sent WORKER_MSG_TASK_DONE message.\n", worker_id);
         } else {
             DEBUG_LOG( "Worker %d: Failed to send WORKER_MSG_TASK_DONE message.\n", worker_id);
@@ -179,8 +174,8 @@ int main(int argc, char* argv[]) {
     // Update Messages
     for (int i = 0; i < 3; i++) {
         LOG_TO_STDOUT("From Worker %d: output line %d\n", worker_id, i + 1);
-        SEND_UPDATE_MESSAGE(udp_socket, &server_address, worker_id);
-        sleep(0.001);
+        SEND_UPDATE_MESSAGE(global_udp_socket, &server_address, worker_id);
+        sleep(0.01);
     }
 
     // Shutdown Message
@@ -191,7 +186,7 @@ int main(int argc, char* argv[]) {
         msg.worker_id = worker_id;
 
         size_t udp_sent;
-        if (tcs_send_to(udp_socket, (const uint8_t*)&msg, sizeof(msg), TCS_NO_FLAGS, &server_address, &udp_sent) == TCS_SUCCESS && udp_sent == sizeof(msg)) {
+        if (tcs_send_to(global_udp_socket, (const uint8_t*)&msg, sizeof(msg), TCS_NO_FLAGS, &server_address, &udp_sent) == TCS_SUCCESS && udp_sent == sizeof(msg)) {
             DEBUG_LOG( "Worker %d: Sent WORKER_MSG_SHUTDOWN message.\n", worker_id);
         } else {
             DEBUG_LOG( "Worker %d: Failed to send WORKER_MSG_SHUTDOWN message.\n", worker_id);

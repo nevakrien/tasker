@@ -17,6 +17,11 @@ typedef enum {
 typedef int worker_id_t;
 typedef int task_id_t;
 
+typedef struct {
+    uint32_t magic; 
+    worker_id_t worker_id;
+} WorkerInitTcp;
+
 typedef union {
     struct {
         size_t bytes_written;
