@@ -7,18 +7,37 @@
 
 int main(int argc, char *argv[]) {
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s <task_name> <command>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <task_name> <command> [args...]\n", argv[0]);
         return 1;
     }
 
     const char *task_name = argv[1];
-    const char *command = argv[2];
 
+    // Concatenate all arguments into a single command string
+    size_t command_length = 0;
+    for (int i = 2; i < argc; i++) {
+        command_length += strlen(argv[i]) + 1; // Include space or null terminator
+    }
+
+    char *command = malloc(command_length);
+    if (!command) {
+        perror("Failed to allocate memory for command string");
+        return 1;
+    }
+
+    command[0] = '\0'; // Initialize the command string
+    for (int i = 2; i < argc; i++) {
+        strcat(command, argv[i]);
+        if (i < argc - 1) {
+            strcat(command, " "); // Add a space between arguments
+        }
+    }
 
     // Open updates and error files using shared file access
     FILE *updates_file = open_updates_file(task_name, "w");
     if (!updates_file) {
         perror("Failed to open updates file");
+        free(command);
         return 1;
     }
 
@@ -26,6 +45,7 @@ int main(int argc, char *argv[]) {
     if (!error_file) {
         perror("Failed to open error code file");
         fclose(updates_file);
+        free(command);
         return 1;
     }
 
@@ -39,6 +59,7 @@ int main(int argc, char *argv[]) {
         fprintf(error_file, "1\n"); // Write error code
         fclose(updates_file);
         fclose(error_file);
+        free(command);
         return 1;
     }
 
@@ -46,14 +67,13 @@ int main(int argc, char *argv[]) {
     while ((ch = fgetc(cmd_output)) != EOF) {
         fputc(ch, updates_file); // Write character to the updates file
     }
-    fflush(updates_file); // Ensure updates are written immediately
-
 
     int exit_code = POCLOSE(cmd_output);
     fprintf(error_file, "%d\n", exit_code); // Write final status code
 
     fclose(updates_file);
     fclose(error_file);
+    free(command);
 
     return exit_code;
 }

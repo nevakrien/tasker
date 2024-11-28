@@ -1,1 +1,1 @@
-Task started: gcc
+Task started: gcc -O2 src/hello_world.c -ohello_world
