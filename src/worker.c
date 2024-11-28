@@ -28,6 +28,7 @@ static size_t total_bytes_written = 0;
 // Macro for sending WORKER_MSG_UPDATE UDP messages
 #define SEND_UPDATE_MESSAGE(socket, server_addr, worker_id) \
     do {                                                                       \
+        fflush(stdout);                                                        \
         WorkerMessage msg;                                                     \
         msg.magic = WORKER_MESSAGE_MAGIC;                                      \
         msg.type = WORKER_MSG_UPDATE;                                          \
