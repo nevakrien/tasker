@@ -10,15 +10,24 @@ pretty much any C compiler should be able to build this.
 
 
 # Architcture
-every task has 2 associated temp files
+we are using popen ( \_popen on windows) to run side processes and tinysocket to comunicate between them.
+because of this we only depend on popen which is very standard 
 
-1. the tasks printble output.
-2. the tasks status.
+the sockets are global for the most part and thats because having them set up that way allows us to clean them up.
+this is not ideal but we are stuck with what the operating system gives us.
+you will see 
 
-a task is done if and only if its status file is there. 
-if thats the case an intger would be there to indicate the error code.
+```c
+/*sockets*/
+```
+in any function signature that uses that global state.
+in terms of actually building on windows I have managed to make make work.
+ideally we would have just a crapton of build systems including cmake and visual studio but this we do in the polish state.
 
-### Why this?
-we are using popen as a way to do multiprocessing and multithreading because its fairly standard on all platforms (including windows). for comunicating between threads we are using the file system as thats the only real way to run things in a non blocking way.
+right now a lot of things are in header files and thats mostly because we are during rapid devlopment.
+when structure irons out we will add .c files
 
-note that on windows there is some weirdnes with shared file access but the code needs to be made for the case a file has yet to be made anyway so this should not break correctnes.
+# TODO
+1. add tcp protocol to the test
+2. finishup worker logic
+3. move stuff out of headers into .c file

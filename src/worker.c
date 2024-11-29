@@ -10,6 +10,7 @@
 #include "tinycsocket.h"
 #include "protocol.h"
 #include "global_sockets.h"
+#include "utils.h"
 
 // #define DEBUG_LOG(x, ...) fprintf(stderr,x,##__VA_ARGS__)
 #define DEBUG_LOG(x, ...) 
@@ -56,7 +57,7 @@ void print_usage(const char* program_name) {
 //global args
 worker_id_t worker_id;
 struct TcsAddress server_address;
-int setup(int argc,char* argv[]){
+int setup(/*sockets*/ int argc,char* argv[] ){
     if (argc != 4) {
         print_usage(argv[0]);
         return EXIT_FAILURE;
@@ -121,7 +122,7 @@ int setup(int argc,char* argv[]){
     return EXIT_SUCCESS;
 }
 
-int cleanup(){
+int cleanup(/*sockets*/){
     tcs_destroy(&global_tcp_socket);
     tcs_destroy(&global_udp_socket);
 
@@ -133,10 +134,86 @@ int cleanup(){
     return EXIT_SUCCESS;
 }
 
-int main(int argc, char* argv[]) {
+/*
+note we can crash on OOM. 
+because on most platform malloc returns null less than half the time we go OOM.
+the server should manage a crash byitself.
+*/
+typedef struct {
+    char* memory; //cant be null
+    size_t len;
+    size_t capacity;
+}DynamicBuffer;
+
+static inline void ensure_capacity(DynamicBuffer* buffer,size_t capacity){
+    if(buffer->capacity<capacity){
+        buffer->capacity = max(capacity,2*buffer->capacity);
+        buffer->memory= null_check(realloc(buffer,buffer->capacity));
+    }
+}
+
+
+// Reading data until all command data is received
+static inline int read_command_data(/*sockets*/ DynamicBuffer* buffer, size_t total_size) {
+    size_t total_received = 0;
+
+    while (total_received < total_size) {
+        // Ensure the buffer has enough space for the remaining data
+        ensure_capacity(buffer, total_size);
+
+        // Calculate the remaining bytes to be read
+        size_t to_read = total_size - total_received;
+
+        // Read in chunks to avoid overwhelming the socket
+        size_t chunk_size = to_read > BUFSIZ ? BUFSIZ : to_read;
+
+        // Temporary buffer to receive data
+        char temp_buffer[BUFSIZ];
+        size_t received = 0;
+
+        if (tcs_receive(global_tcp_socket, (uint8_t*)temp_buffer, chunk_size, TCS_NO_FLAGS, &received) != TCS_SUCCESS) {
+            fprintf(stderr, "Error receiving data from socket.\n");
+            return -1;
+        }
+
+        // Append received data to the dynamic buffer
+        memcpy(buffer->memory + total_received, temp_buffer, received);
+
+        total_received += received;
+        buffer->len += received;
+
+        if (received == 0) {
+            fprintf(stderr, "Connection closed prematurely.\n");
+            return -1;
+        }
+    }
+
+    return 0; // Success
+}
+
+int main(/*sockets*/ int argc, char* argv[]) {
     if(setup(argc,argv)==EXIT_FAILURE){
         return EXIT_FAILURE;
     }
+
+    TaskHeader header = {0};
+    DynamicBuffer comand_buffer = {
+        null_check(malloc(BUFSIZ)),
+        0,
+        BUFSIZ
+    };
+
+   //  size_t received;
+   //  if (tcs_receive(global_tcp_socket, (uint8_t*)&header, sizeof(header), TCS_NO_FLAGS, &received) != TCS_SUCCESS || received != sizeof(header)) {
+   //      fprintf(stderr, "Worker %d: Wrong size of TCP message.\n",worker_id);
+   //      goto exit_error;
+   //  }
+   // if(!read_command_data(&comand_buffer,header.packet_size)){
+   //      fprintf(stderr, "Worker %d: failed reading TCP message.\n",worker_id);
+   //      goto exit_error;
+
+   // }
+
 
     // Task example - sending different messages
     // Task Initialization
@@ -152,6 +229,7 @@ int main(int argc, char* argv[]) {
             DEBUG_LOG( "Worker %d: Sent WORKER_MSG_TASK_INIT message.\n", worker_id);
         } else {
             DEBUG_LOG( "Worker %d: Failed to send WORKER_MSG_TASK_INIT message.\n", worker_id);
+            goto exit_error;
         }
     }
 
@@ -168,6 +246,7 @@ int main(int argc, char* argv[]) {
             DEBUG_LOG( "Worker %d: Sent WORKER_MSG_TASK_DONE message.\n", worker_id);
         } else {
             DEBUG_LOG( "Worker %d: Failed to send WORKER_MSG_TASK_DONE message.\n", worker_id);
+            goto exit_error;
         }
     }
 
@@ -190,9 +269,28 @@ int main(int argc, char* argv[]) {
             DEBUG_LOG( "Worker %d: Sent WORKER_MSG_SHUTDOWN message.\n", worker_id);
         } else {
             DEBUG_LOG( "Worker %d: Failed to send WORKER_MSG_SHUTDOWN message.\n", worker_id);
+            goto exit_error;
         }
     }
 
     return cleanup();
+
+    exit_error:
+    // Shutdown Message
+    {
+        WorkerMessage msg;
+        msg.magic = WORKER_MESSAGE_MAGIC;
+        msg.type = WORKER_MSG_CRASH;
+        msg.worker_id = worker_id;
+
+        size_t udp_sent;
+        if (tcs_send_to(global_udp_socket, (const uint8_t*)&msg, sizeof(msg), TCS_NO_FLAGS, &server_address, &udp_sent) == TCS_SUCCESS && udp_sent == sizeof(msg)) {
+            DEBUG_LOG( "Worker %d: Sent WORKER_MSG_SHUTDOWN message.\n", worker_id);
+        } else {
+            DEBUG_LOG( "Worker %d: Failed to send WORKER_MSG_SHUTDOWN message.\n", worker_id);
+        }
+    }
+    cleanup();
+    return EXIT_FAILURE;
 }
 

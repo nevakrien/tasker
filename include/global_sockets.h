@@ -11,6 +11,6 @@ extern TcsSocket global_udp_socket;
 
 
 // Function to set up the interrupt handler
-void setup_interrupt_handler(void);
+void setup_interrupt_handler(/*sockets*/void);
 
 #endif // GLOBAL_SOCKET_H

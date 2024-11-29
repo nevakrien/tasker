@@ -3,24 +3,30 @@
 
 #include <stdint.h>
 
-#define MAX_COMMAND 10*FILENAME_MAX
-
 #define WORKER_MESSAGE_MAGIC 0xDEADBEEF
 
 typedef enum {
     WORKER_MSG_UPDATE,       // Update with new output line info
     WORKER_MSG_TASK_DONE,    // Task completion message
     WORKER_MSG_TASK_INIT,    // Task initialization message
-    WORKER_MSG_SHUTDOWN      // Worker shutdown message
+    WORKER_MSG_SHUTDOWN,      // Worker shutdown message
+    WORKER_MSG_CRASH
 } WorkerMessageType;
 
 typedef int worker_id_t;
 typedef int task_id_t;
 
+#define DONE_TASK_ID -1
+
 typedef struct {
     uint32_t magic; 
     worker_id_t worker_id;
 } WorkerInitTcp;
+
+typedef struct {
+    task_id_t id;
+    size_t packet_size;
+} TaskHeader;
 
 typedef union {
     struct {
@@ -45,5 +51,7 @@ typedef struct {
     worker_id_t worker_id;            // ID of the worker sending the message
     WorkerMessagePayload payload;  // Payload specific to the message type
 } WorkerMessage;
+
+ 
 
 #endif // PROTOCOL_H

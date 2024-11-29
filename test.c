@@ -29,7 +29,7 @@
 
 #include <inttypes.h> // For PRIu64
 
-int TEST_wait_for_udp_messages(TcsSocket udp_server, TerminalWorker workers[], size_t num_workers) {
+int TEST_wait_for_udp_messages(/*sockets*/ TcsSocket udp_server, TerminalWorker workers[], size_t num_workers) {
     size_t alive_workers = num_workers; // Start with all workers alive
 
     while (alive_workers > 0) {
@@ -99,6 +99,21 @@ int TEST_wait_for_udp_messages(TcsSocket udp_server, TerminalWorker workers[], s
 
             case WORKER_MSG_SHUTDOWN:
                 fprintf(stdout, "Worker %d: Shutdown message received. Marking as terminated.\n", message.worker_id);
+
+                // Mark worker as shutdown and decrement alive workers count
+                if (worker->tcp_socket != TCS_NULLSOCKET) {
+                    tcs_destroy(&worker->tcp_socket);
+                    worker->tcp_socket = TCS_NULLSOCKET;
+                }
+                if (worker->process) {
+                    PCLOSE(worker->process);
+                    worker->process = NULL;
+                }
+                alive_workers--;
+                break;
+
+            case WORKER_MSG_CRASH:
+                fprintf(stdout, "Worker %d: Crash message received. Marking as terminated.\n", message.worker_id);
 
                 // Mark worker as shutdown and decrement alive workers count
                 if (worker->tcp_socket != TCS_NULLSOCKET) {

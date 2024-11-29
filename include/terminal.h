@@ -14,7 +14,7 @@ typedef struct {
 //needs work
 static inline FILE* start_worker(int worker_num,uint16_t tcp_port,uint16_t udp_port){
     // Prepare the worker command
-    char worker_command[MAX_COMMAND];
+    char worker_command[FILENAME_MAX + BUFSIZ];
     #ifdef _WIN32
         snprintf(worker_command, sizeof(worker_command), "bin\\worker.exe %d %u %u", worker_num, tcp_port,udp_port);
     #else

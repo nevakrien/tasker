@@ -8,7 +8,7 @@ TcsSocket global_tcp_socket;
 TcsSocket global_udp_socket;
 
 // Interrupt handler function
-void handle_interrupt(int signal) {
+void handle_interrupt(/*sockets*/ int signal) {
     fprintf(stderr, "Caught signal %d. Cleaning up resources...\n", signal);
 
     // Close TCP socket if valid
@@ -35,7 +35,7 @@ void handle_interrupt(int signal) {
 
 
 // Function to set up the interrupt handler
-void setup_interrupt_handler(void) {
+void setup_interrupt_handler(/*sockets*/ void) {
      global_tcp_socket= TCS_NULLSOCKET;
      global_udp_socket= TCS_NULLSOCKET;
 

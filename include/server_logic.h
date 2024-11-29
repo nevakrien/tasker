@@ -60,7 +60,7 @@ static int32_t open_find_port(TcsSocket* socket, uint16_t start_port, uint16_t e
     return TCS_ERROR_KERNEL; // Indicate failure to bind
 }
 
-static int initialize_server_state(ServerState* state) {
+static int initialize_server_state(/*sockets*/ ServerState* state) {
     setup_interrupt_handler();
     // state->tcp_port = tcp_port;
     // state->udp_port = udp_port;
@@ -141,7 +141,7 @@ static int initialize_server_state(ServerState* state) {
 }
 
 
-static int inlize_workers(TerminalWorker workers[], size_t num_workers, ServerState* state) {
+static int inlize_workers(/*sockets*/ TerminalWorker workers[], size_t num_workers, ServerState* state) {
     // Initialize all worker entries
     for (size_t i = 0; i < num_workers; i++) {
         workers[i].tcp_socket = TCS_NULLSOCKET;
@@ -209,7 +209,7 @@ static int inlize_workers(TerminalWorker workers[], size_t num_workers, ServerSt
 
 
 // Function to clean up the server state
-static void cleanup_server_state(ServerState* state) {
+static void cleanup_server_state(/*sockets*/ ServerState* state) {
     (void)state;
     tcs_destroy(&global_tcp_socket);
     tcs_destroy(&global_udp_socket);
