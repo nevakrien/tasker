@@ -1,3 +1,7 @@
+# deprcated 
+this project cant realistically be small enough and easy enough to build to justify its existance...
+if I would be realistic about this I would use Rust or Go simply because cross platform package managers and compilers are very importnat for this to work.
+
 # tasker (work in progress)
 basic task runner and build system, made in C with the goal of being cross platform and not sucking.
 
